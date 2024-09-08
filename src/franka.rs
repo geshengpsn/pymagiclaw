@@ -9,7 +9,7 @@ use std::{
         mpsc::{channel, Sender},
         Arc, Mutex, TryLockError,
     },
-    thread::{spawn, JoinHandle},
+    thread::spawn,
 };
 
 #[pyclass]
@@ -24,7 +24,6 @@ struct FrankaInner {
 
 struct ControlSession {
     sender: Sender<ControlMsg>,
-    handle: JoinHandle<()>,
 }
 
 enum ControlMsg {
@@ -65,10 +64,6 @@ impl Franka {
         })
     }
 
-    // pub fn read_state(&mut self) {
-    //     self.session
-    // }
-
     pub fn start_control(&mut self, stiffness: f64, damping: f64) -> PyResult<()> {
         if self.session.is_some() {
             return Err(std::io::Error::other("robot in use, start new control failed").into());
@@ -76,7 +71,7 @@ impl Franka {
         let (sender, rx) = channel::<ControlMsg>();
 
         let inner_copy = self.inner.clone();
-        let handle = spawn(move || {
+        let _handle = spawn(move || {
             let mut inner_guard = inner_copy
                 .try_lock()
                 .map_err(|e| match e {
@@ -89,9 +84,9 @@ impl Franka {
                 })
                 .unwrap();
             let model = inner_guard.robot.load_model(true).unwrap();
-            let mut robot_ee_pose_d = Isometry3::identity();
+            // let mut robot_ee_pose_d = Isometry3::identity();
             let state = inner_guard.robot.read_once().unwrap();
-            robot_ee_pose_d = Isometry3::from_parts(
+            let mut robot_ee_pose_d = Isometry3::from_parts(
                 Vector3::new(state.O_T_EE[12], state.O_T_EE[13], state.O_T_EE[14]).into(),
                 Rotation3::<f64>::from_matrix(
                     &Matrix4::from_column_slice(&state.O_T_EE)
@@ -174,7 +169,7 @@ impl Franka {
             }
         });
 
-        self.session = Some(ControlSession { sender, handle });
+        self.session = Some(ControlSession { sender });
 
         Ok(())
     }
@@ -242,12 +237,6 @@ fn stiffness_damping(
     }
     (stiffness, damping)
 }
-
-// #[pyclass]
-// pub struct ConnectConfig {
-//     address: &'static str,
-//     realtime: bool,
-// }
 
 pub(crate) fn add_franka_submodule(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     let child_module = PyModule::new_bound(parent_module.py(), "franka")?;
