@@ -2,12 +2,13 @@ use franka::{exception::FrankaException, Frame, MotionFinished, RealtimeConfig, 
 use nalgebra::{
     Isometry3, Matrix3, Matrix4, Matrix6, Matrix6x1, Rotation3, SMatrix, UnitQuaternion, Vector3,
 };
+use numpy::{ndarray::Array2, ToPyArray};
 use pyo3::prelude::*;
 use std::{
     io,
     sync::{
         mpsc::{channel, Sender},
-        Arc, Mutex, TryLockError,
+        Arc, Mutex, RwLock, TryLockError,
     },
     thread::spawn,
 };
@@ -23,11 +24,13 @@ struct FrankaInner {
 }
 
 struct ControlSession {
-    sender: Sender<ControlMsg>,
+    control_msg_tx: Sender<ControlMsg>,
+    state: Arc<RwLock<[f64; 16]>>,
 }
 
 enum ControlMsg {
-    Cartesian(Isometry3<f64>),
+    RelativeCartesian(Isometry3<f64>),
+    AbsoluteCartesian(Isometry3<f64>),
     Stop,
 }
 
@@ -68,7 +71,10 @@ impl Franka {
         if self.session.is_some() {
             return Err(std::io::Error::other("robot in use, start new control failed").into());
         }
-        let (sender, rx) = channel::<ControlMsg>();
+        let (control_msg_tx, control_msg_rx) = channel::<ControlMsg>();
+
+        let state_rwlock = Arc::new(RwLock::new([0.; 16]));
+        let state_rwlock_clone = state_rwlock.clone();
 
         let inner_copy = self.inner.clone();
         let _handle = spawn(move || {
@@ -98,10 +104,16 @@ impl Franka {
             let (stiffness_matrix, damping_matrix) = stiffness_damping(stiffness, damping);
             let e = inner_guard.robot.control_torques(
                 |state, _time| {
-                    // println!("{:?}", _time);
-                    match rx.try_recv() {
-                        Ok(ControlMsg::Cartesian(delta)) => {
+                    {
+                        let mut state_writer = state_rwlock.write().unwrap();
+                        *state_writer = state.O_T_EE;
+                    }
+                    match control_msg_rx.try_recv() {
+                        Ok(ControlMsg::RelativeCartesian(delta)) => {
                             robot_ee_pose_d *= delta;
+                        }
+                        Ok(ControlMsg::AbsoluteCartesian(delta)) => {
+                            robot_ee_pose_d = delta;
                         }
                         Err(std::sync::mpsc::TryRecvError::Disconnected) | Ok(ControlMsg::Stop) => {
                             return Torques::new([0., 0., 0., 0., 0., 0., 0.]).motion_finished();
@@ -169,28 +181,15 @@ impl Franka {
             }
         });
 
-        self.session = Some(ControlSession { sender });
+        self.session = Some(ControlSession {
+            control_msg_tx,
+            state: state_rwlock_clone,
+        });
 
         Ok(())
     }
 
-    pub fn stop(&self) -> PyResult<()> {
-        match self.session.as_ref() {
-            Some(session) => {
-                session
-                    .sender
-                    .send(ControlMsg::Stop)
-                    .map_err(std::io::Error::other)?;
-                Ok(())
-            }
-            None => Err(std::io::Error::other(
-                "no control session active, please call start_control first",
-            )
-            .into()),
-        }
-    }
-
-    pub fn move_delta_cartesian(
+    pub fn move_relative_cartesian(
         &mut self,
         delta_cartesian: numpy::PyReadonlyArray2<f64>,
     ) -> PyResult<()> {
@@ -203,8 +202,70 @@ impl Franka {
                 );
 
                 session
-                    .sender
-                    .send(ControlMsg::Cartesian(delta))
+                    .control_msg_tx
+                    .send(ControlMsg::RelativeCartesian(delta))
+                    .map_err(std::io::Error::other)?;
+                Ok(())
+            }
+            None => Err(std::io::Error::other(
+                "no control session active, please call start_control first",
+            )
+            .into()),
+        }
+    }
+
+    pub fn move_absolue_cartesian(
+        &mut self,
+        cartesian: numpy::PyReadonlyArray2<f64>,
+    ) -> PyResult<()> {
+        match self.session.as_ref() {
+            Some(session) => {
+                let m = Matrix4::from_row_slice(cartesian.as_slice()?);
+                let delta = Isometry3::from_parts(
+                    Vector3::new(m[(0, 3)], m[(1, 3)], m[(2, 3)]).into(),
+                    Rotation3::<f64>::from_matrix(&m.remove_column(3).remove_row(3)).into(),
+                );
+
+                session
+                    .control_msg_tx
+                    .send(ControlMsg::AbsoluteCartesian(delta))
+                    .map_err(std::io::Error::other)?;
+                Ok(())
+            }
+            None => Err(std::io::Error::other(
+                "no control session active, please call start_control first",
+            )
+            .into()),
+        }
+    }
+
+    pub fn read_state<'py>(
+        &mut self,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, numpy::PyArray2<f64>>> {
+        match self.session.as_ref() {
+            Some(session) => {
+                let state = session.state.read().unwrap();
+                let array = Array2::from_shape_vec((4, 4), state.to_vec()).unwrap();
+                let res = array.t().to_pyarray_bound(py);
+                Ok(res)
+            }
+            None => {
+                let mut inner_lock = self.inner.lock().unwrap();
+                let state = inner_lock.robot.read_once().unwrap();
+                let array = Array2::from_shape_vec((4, 4), state.O_T_EE.to_vec()).unwrap();
+                let res = array.t().to_pyarray_bound(py);
+                Ok(res)
+            }
+        }
+    }
+
+    pub fn stop(&mut self) -> PyResult<()> {
+        match self.session.take() {
+            Some(session) => {
+                session
+                    .control_msg_tx
+                    .send(ControlMsg::Stop)
                     .map_err(std::io::Error::other)?;
                 Ok(())
             }
