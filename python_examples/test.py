@@ -15,7 +15,7 @@ state = robot.read_state()
 print(state)
 # sleep(5)
 
-robot.move_absolue_cartesian(
+robot.move_absolute_cartesian(
     np.array(
         [[ 0.92342271, -0.35936834,  0.13470301,  0.48263934],
          [-0.36170872, -0.93226071, -0.00753466, -0.03020527],
