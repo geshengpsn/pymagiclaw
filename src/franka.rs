@@ -214,7 +214,7 @@ impl Franka {
         }
     }
 
-    pub fn move_absolue_cartesian(
+    pub fn move_absolute_cartesian(
         &mut self,
         cartesian: numpy::PyReadonlyArray2<f64>,
     ) -> PyResult<()> {
