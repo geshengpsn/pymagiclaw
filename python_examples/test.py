@@ -8,13 +8,7 @@ robot = franka.Franka("192.168.1.100", False)
 # tranlation stiffness, rotation stiffness
 robot.start_control(300, 20)
 
-m = np.identity(4)
-# m[2, 3] = 0.1;
-sleep(1)
-state = robot.read_state()
-print(state)
-# sleep(5)
-
+# 绝对坐标
 robot.move_absolute_cartesian(
     np.array(
         [[ 0.92342271, -0.35936834,  0.13470301,  0.48263934],
@@ -23,5 +17,18 @@ robot.move_absolute_cartesian(
         [ 0.,          0.,          0.,          1.        ]]
     )
 );
-sleep(5)
-robot.stop()
+sleep(1)
+
+# 相对坐标
+m = np.identity(4)
+m[2, 3] = 0.1;
+robot.move_relative_cartesian(m)
+sleep(1)
+
+# 末端位姿
+state = robot.read_state()
+print(state)
+
+# sleep(10)
+
+# robot.stop()

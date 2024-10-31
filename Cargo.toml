@@ -9,8 +9,8 @@ name = "pymagiclaw"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.21", features = ["extension-module"] }
-numpy = "0.21"
+pyo3 = { version = "0.22.5", features = ["extension-module"] }
+numpy = "0.22.1"
 libfranka-rs = "0.9"
-nalgebra = "0.33.0"
-# magiclaw-rs = { path = "../magiclaw-rs" }
+nalgebra = "0.33.2"
+tungstenite = "0.24.0"

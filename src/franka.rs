@@ -13,6 +13,7 @@ use std::{
     thread::spawn,
 };
 
+/// A Python-friendly wrapper for controlling a Franka robot.
 #[pyclass]
 pub struct Franka {
     inner: Arc<Mutex<FrankaInner>>,
@@ -34,8 +35,22 @@ enum ControlMsg {
     Stop,
 }
 
+impl Drop for Franka {
+    fn drop(&mut self) {
+        self.stop().unwrap();
+    }
+}
+
 #[pymethods]
 impl Franka {
+    /// Create a new Franka robot instance.
+    ///
+    /// Args:
+    ///     address (str): The IP address of the robot.
+    ///     realtime (bool): Whether to use realtime mode.
+    ///
+    /// Returns:
+    ///     Franka: A new Franka robot instance.
     #[new]
     pub fn new(address: String, realtime: bool) -> PyResult<Self> {
         let mut robot = Robot::new(
@@ -67,7 +82,19 @@ impl Franka {
         })
     }
 
-    pub fn start_control(&mut self, stiffness: f64, damping: f64) -> PyResult<()> {
+    /// Start the control session for the robot.
+    ///
+    /// Args:
+    ///     translational_stiffness (float): The translational stiffness parameter for the controller.
+    ///     rotational_stiffness (float): The rotational stiffness parameter for the controller.
+    ///
+    /// Returns:
+    ///     None
+    pub fn start_control(
+        &mut self,
+        translational_stiffness: f64,
+        rotational_stiffness: f64,
+    ) -> PyResult<()> {
         if self.session.is_some() {
             return Err(std::io::Error::other("robot in use, start new control failed").into());
         }
@@ -101,7 +128,8 @@ impl Franka {
                 )
                 .into(),
             );
-            let (stiffness_matrix, damping_matrix) = stiffness_damping(stiffness, damping);
+            let (stiffness_matrix, damping_matrix) =
+                stiffness_damping(translational_stiffness, rotational_stiffness);
             let e = inner_guard.robot.control_torques(
                 |state, _time| {
                     {
@@ -189,6 +217,13 @@ impl Franka {
         Ok(())
     }
 
+    /// Move the robot relative to its current position in Cartesian space.
+    ///
+    /// Args:
+    ///     delta_cartesian (numpy.ndarray): A 4x4 transformation matrix representing the relative movement.
+    ///
+    /// Returns:
+    ///     None
     pub fn move_relative_cartesian(
         &mut self,
         delta_cartesian: numpy::PyReadonlyArray2<f64>,
@@ -214,6 +249,13 @@ impl Franka {
         }
     }
 
+    /// Move the robot to an absolute position in Cartesian space.
+    ///
+    /// Args:
+    ///     cartesian (numpy.ndarray): A 4x4 transformation matrix representing the absolute position.
+    ///
+    /// Returns:
+    ///     None
     pub fn move_absolute_cartesian(
         &mut self,
         cartesian: numpy::PyReadonlyArray2<f64>,
@@ -239,6 +281,10 @@ impl Franka {
         }
     }
 
+    /// Read the current state of the robot.
+    ///
+    /// Returns:
+    ///     numpy.ndarray: A 4x4 transformation matrix representing the current end-effector pose.
     pub fn read_state<'py>(
         &mut self,
         py: Python<'py>,
@@ -260,6 +306,10 @@ impl Franka {
         }
     }
 
+    /// Stop the current control session.
+    ///
+    /// Returns:
+    ///     None
     pub fn stop(&mut self) -> PyResult<()> {
         match self.session.take() {
             Some(session) => {
