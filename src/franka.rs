@@ -10,7 +10,7 @@ use std::{
         mpsc::{channel, Sender},
         Arc, Mutex, RwLock, TryLockError,
     },
-    thread::spawn,
+    thread::{sleep, spawn}, time::Duration,
 };
 
 /// A Python-friendly wrapper for controlling a Franka robot.
@@ -209,11 +209,13 @@ impl Franka {
             }
         });
 
+        // wait for starting of control loop 
+        sleep(Duration::from_secs_f64(0.1));
+        
         self.session = Some(ControlSession {
             control_msg_tx,
             state: state_rwlock_clone,
         });
-
         Ok(())
     }
 
@@ -293,14 +295,14 @@ impl Franka {
             Some(session) => {
                 let state = session.state.read().unwrap();
                 let array = Array2::from_shape_vec((4, 4), state.to_vec()).unwrap();
-                let res = array.t().to_pyarray_bound(py);
+                let res = array.t().to_pyarray(py);
                 Ok(res)
             }
             None => {
                 let mut inner_lock = self.inner.lock().unwrap();
                 let state = inner_lock.robot.read_once().unwrap();
                 let array = Array2::from_shape_vec((4, 4), state.O_T_EE.to_vec()).unwrap();
-                let res = array.t().to_pyarray_bound(py);
+                let res = array.t().to_pyarray(py);
                 Ok(res)
             }
         }
@@ -350,7 +352,7 @@ fn stiffness_damping(
 }
 
 pub(crate) fn add_franka_submodule(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    let child_module = PyModule::new_bound(parent_module.py(), "franka")?;
+    let child_module = PyModule::new(parent_module.py(), "franka")?;
     // child_module.add_function(wrap_pyfunction!(func, &child_module)?)?;
     child_module.add_class::<Franka>()?;
     // child_module.add_class::<ConnectConfig>()?;
