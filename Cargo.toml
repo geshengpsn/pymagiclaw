@@ -9,7 +9,7 @@ name = "pymagiclaw"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.22.6", features = ["extension-module"] }
+pyo3 = { version = "0.22.5", features = ["extension-module"] }
 numpy = "0.22.1"
 libfranka-rs = "0.9"
 tungstenite = "0.24.0"
