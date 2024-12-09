@@ -10,7 +10,8 @@ use std::{
         mpsc::{channel, Sender},
         Arc, Mutex, RwLock, TryLockError,
     },
-    thread::{sleep, spawn}, time::Duration,
+    thread::{sleep, spawn},
+    time::Duration,
 };
 
 /// A Python-friendly wrapper for controlling a Franka robot.
@@ -80,6 +81,26 @@ impl Franka {
             inner,
             session: None,
         })
+    }
+
+    pub fn set_load(
+        &mut self,
+        mass: f64,
+        f_x_cload: numpy::PyReadonlyArray1<f64>,
+        load_inertia: numpy::PyReadonlyArray2<f64>,
+    ) -> PyResult<()> {
+        let mut inner_guard = self.inner.lock().unwrap();
+        let f_x_cload = f_x_cload.as_slice()?;
+        let load_inertia = load_inertia.as_slice()?;
+        let mut f_x_cload_array = [0.; 3];
+        let mut load_inertia_array = [0.; 9];
+        f_x_cload_array.copy_from_slice(f_x_cload);
+        load_inertia_array.copy_from_slice(load_inertia);
+        inner_guard
+            .robot
+            .set_load(mass, f_x_cload_array, load_inertia_array)
+            .unwrap();
+        Ok(())
     }
 
     /// Start the control session for the robot.
@@ -209,9 +230,9 @@ impl Franka {
             }
         });
 
-        // wait for starting of control loop 
+        // wait for starting of control loop
         sleep(Duration::from_secs_f64(0.1));
-        
+
         self.session = Some(ControlSession {
             control_msg_tx,
             state: state_rwlock_clone,
@@ -327,6 +348,34 @@ impl Franka {
             .into()),
         }
     }
+
+    /// Move the robot to a joint configuration.
+    pub fn move_joint(&mut self, speed_factor: f64, q_goal: [f64; 7]) -> PyResult<()> {
+        let mut guard = self.inner.lock().unwrap();
+        guard.robot.joint_motion(speed_factor, &q_goal).unwrap();
+        Ok(())
+    }
+
+    // start cartesian control
+    // fn move_line(&mut self, end: numpy::PyReadonlyArray2<f64>) -> PyResult<()> {
+    //     let mut guard = self.inner.lock().unwrap();
+    //     // let model = guard.robot.load_model(true).unwrap();
+    //     // guard.robot.joint_motion(speed_factor, q_goal);
+    //     guard
+    //         .robot
+    //         .control_cartesian_pose(
+    //             |state, duration| {
+    //                 let time = duration.as_secs_f64();
+
+    //                 CartesianPose::new([0.; 16], None)
+    //             },
+    //             None,
+    //             None,
+    //             None,
+    //         )
+    //         .unwrap();
+    //     Ok(())
+    // }
 }
 
 fn stiffness_damping(

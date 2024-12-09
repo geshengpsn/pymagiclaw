@@ -8,7 +8,8 @@ fn main() {
     sleep(Duration::from_secs_f64(5.));
     for _ in 0..100 {
         sleep(Duration::from_secs_f64(0.033));
-        ws.send(Message::Binary((0.5f32).to_le_bytes().to_vec())).unwrap();
+        ws.send(Message::Binary((0.5f32).to_le_bytes().to_vec()))
+            .unwrap();
     }
     ws.close(None).unwrap();
 }

@@ -8,7 +8,6 @@ struct Gripper {
     ws: WebSocket<MaybeTlsStream<TcpStream>>,
 }
 
-
 impl Drop for Gripper {
     fn drop(&mut self) {
         print!("closed");
