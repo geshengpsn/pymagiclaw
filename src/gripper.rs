@@ -38,7 +38,7 @@ impl Gripper {
 }
 
 pub(crate) fn add_gripper_submodule(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    let child_module = PyModule::new(parent_module.py(), "gripper")?;
+    let child_module = PyModule::new_bound(parent_module.py(), "gripper")?;
     // child_module.add_function(wrap_pyfunction!(func, &child_module)?)?;
     child_module.add_class::<Gripper>()?;
     // child_module.add_class::<ConnectConfig>()?;
